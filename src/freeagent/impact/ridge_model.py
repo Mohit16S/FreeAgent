@@ -18,6 +18,7 @@ class ImpactModel:
         m = matches[matches.match_id.isin(appearances.match_id)].sort_values(['date','match_id']).reset_index(drop=True)
         if len(m)<20: raise ValueError('At least 20 matches required for impact fitting')
         dates = sorted(m.date.unique())
+        if len(dates)<2: raise ValueError('Impact fitting requires matches on at least two dates for chronological validation')
         split = dates[max(1,int(len(dates)*.75))]
         train, valid = m[m.date < split], m[m.date >= split]
         a0 = appearances[appearances.match_id.isin(train.match_id)]

@@ -13,7 +13,7 @@ def validate(matches: pd.DataFrame, appearances: pd.DataFrame | None = None,
     warnings = []
     missing = sorted(set(MATCH_FIELDS) - set(matches.columns))
     if missing:
-        return {'errors': [f'Missing match fields: {missing}'], 'rows': len(matches)}
+        return {'errors': [f'Missing match fields: {missing}'], 'rows': len(matches), 'missing_fields': missing, 'appearance_rows': 0 if appearances is None else len(appearances)}
     m = matches
     dates = pd.to_datetime(m.date, errors='coerce', utc=True, format='ISO8601')
     if dates.isna().any(): errors.append('Invalid/missing match dates')
@@ -53,7 +53,7 @@ def validate(matches: pd.DataFrame, appearances: pd.DataFrame | None = None,
             if len(joined) and (~((joined.team_id == joined.home_id) | (joined.team_id == joined.away_id))).any():
                 errors.append('Unmapped match/team or incorrect home/away appearance')
             if not set(a.match_id).issubset(set(m.match_id)): errors.append('Unmapped appearance match')
-            totals = a.groupby(['match_id', 'team_id']).minutes.sum()
+            totals = a.assign(minutes=mins).groupby(['match_id', 'team_id']).minutes.sum()
             if (totals > 990.01).any(): errors.append('Squad minutes exceed 11 players × 90')
             covered = m[m.match_id.isin(a.match_id)]
             expected = set(zip(covered.match_id, covered.home_id)) | set(zip(covered.match_id, covered.away_id))
@@ -61,6 +61,7 @@ def validate(matches: pd.DataFrame, appearances: pd.DataFrame | None = None,
             if len(covered)<len(m): warnings.append(f'{len(m)-len(covered)} matches lack appearances and cannot train player impact')
             if (totals < 720).any(): errors.append('Incomplete team minutes: below 720')
     return {'rows': len(m), 'appearance_rows': 0 if appearances is None else len(appearances),
+            'missing_fields': [], 'appearance_missingness': {} if appearances is None else appearances.isna().sum().to_dict(),
             'missingness': m.isna().sum().to_dict(), 'duplicates': int(m.match_id.duplicated().sum()),
             'date_min': str(dates.min()), 'date_max': str(dates.max()),
             'seasons': sorted(m.season.astype(str).unique().tolist()), 'errors': sorted(set(errors)), 'warnings': warnings}

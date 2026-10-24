@@ -2,27 +2,74 @@
 
 A local football transfer **research application**: player adjusted plus-minus → score probabilities → paired season scenarios → displacement-aware expected points → financial scenarios. It does not establish causal transfer effects or independently verify fees and wages.
 
-## Run locally
+## Local setup and portable commands
 
-Python 3.11+ (tested with 3.12). From this directory:
+Use Python 3.12 locally and select Python 3.12 in Streamlit Community Cloud. From the repository root:
 
 ```bash
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -r requirements.txt
-export PYTHONPATH="$PWD/src"
-.venv/bin/freeagent ingest --competition 2 --season 27
-.venv/bin/freeagent validate
-.venv/bin/freeagent train --cutoff 2016-02-01 --bootstrap 20
-.venv/bin/freeagent backtest --cutoffs 2015-12-01 2016-02-01 2016-04-01 2016-06-01
-.venv/bin/python -m pytest -q
-.venv/bin/streamlit run app.py
+python -m venv .venv
+source .venv/bin/activate
+# Windows PowerShell instead: .venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
+
+# Download real data, validate, train all models and calculate backtest metrics:
+python -m freeagent.cli setup --evaluate
+python -m freeagent.cli status
+python -m pytest -q
+python -m streamlit run app.py
 ```
 
-`PYTHONPATH` explicitly selects current source during development, including environments where editable installation registration is disabled. With pip instead of uv, use `python -m venv .venv` and `.venv/bin/python -m pip install -r requirements.txt`.
+The virtual environment is optional isolation for local development. Application code and deployment commands never invoke its path. Community Cloud installs `requirements.txt`, which explicitly lists runtime dependencies and installs the local FreeAgent package. `requirements-dev.txt` adds pytest. No `PYTHONPATH` setting is required after installation.
 
-The dashboard never trains on interaction and has no synthetic demo fallback. In the evaluator enter your own fee, wage, contract, point price with justification, and minutes allocation. These are scenario assumptions, not observed transfer facts. Expensive models are cached; evaluations run only on explicit submission. Dataset downloads are cached and resumable.
+Individual reproducible stages are also available:
 
-For CLI scenarios: `.venv/bin/freeagent evaluate --scenario config/research_scenario.json`. The example is created only after real-data validation, uses real player IDs, and labels financial assumptions explicitly. Global `--data` and `--config` flags precede the subcommand. `FREEAGENT_CONFIG` selects an alternate YAML configuration; no API keys are required.
+```bash
+python -m freeagent.cli ingest --competition 2 --season 27
+python -m freeagent.cli validate
+python -m freeagent.cli train --cutoff 2016-02-01 --bootstrap 20
+python -m freeagent.cli backtest --cutoffs 2015-12-01 2016-02-01 2016-04-01 2016-06-01
+python -m freeagent.cli evaluate --scenario config/research_scenario.json
+python scripts/acceptance.py
+```
+
+`config/default.yaml` contains seed, bootstrap count, minimum minutes and objective/verdict defaults. `FREEAGENT_CONFIG` optionally selects another YAML file. `FREEAGENT_HOME` optionally sets the writable runtime root for data, models and backtests; otherwise use the project directory. Set environment variables explicitly; `.env.example` is a template, not an automatically loaded secret store. No API key is required for this source.
+
+`setup` defaults to StatsBomb Premier League 2015/16, cutoff 2016-02-01 and 20 bootstrap draws. It preserves validated downloads and reuses a compatible trained model. Add `--evaluate` to calculate metrics; metrics are never populated from sample constants. For another competition/season, supply `--competition`, `--season`, `--cutoff` and compatible `--cutoffs` when evaluating. Global `--data`/`--config` flags precede individual subcommands. For `setup` and `status`, use `FREEAGENT_HOME` rather than `--data` to keep all runtime outputs together.
+
+## Streamlit Community Cloud
+
+The original deployment showed no data because `data/raw`, `data/processed`, `models/artifacts` and `reports` are intentionally ignored by Git. Your Mac's files are not transferred to the cloud. The app now has an explicit runtime setup workflow:
+
+1. Deploy the GitHub repository with `app.py` as the entrypoint and Python 3.12. Keep `requirements.txt`, `pyproject.toml`, `src/`, `config/`, and `.streamlit/config.toml` in the repository.
+2. Open **Data & models** (also shown automatically when no validated dataset exists).
+3. Optionally select **Also calculate chronological backtest metrics**.
+4. Click **Download real data and train models**. This downloads real matches and lineup intervals, validates them and trains the existing player and score models. Progress and stage errors appear in the app.
+5. When models show **trained**, open **Transfer evaluator**. Fees, wages, price per point and expected minutes must be your explicit scenario assumptions; no actual transfer prices are invented.
+
+First setup requires outbound HTTPS to `raw.githubusercontent.com` and may take several minutes. A session lock prevents overlapping setup jobs within the app process. Interrupted downloads resume from validated cached files. Runtime files may disappear after redeploy/restart; run the setup button again. Rebuilding runtime files is supported deliberately—do not force-add datasets, virtual environments or pickled models to Git.
+
+The setup process saves source URL/retrieval/hash metadata, data-quality diagnostics and setup-stage status. Invalid JSON is rejected before caching; temporary network errors have bounded retries; unavailable seasons produce actionable errors. Missing or malformed player lineups preserve usable match results and are reported. Fewer than 20 pre-cutoff matches with compatible player appearances blocks player/transfer training. Never treat a match-only import as a complete transfer model.
+
+This deployment is a research application. Review [StatsBomb's source agreement](https://github.com/statsbomb/open-data/blob/master/LICENSE.pdf) and attribution requirements before public or commercial use; the app does not grant redistribution/commercial rights. Configure access appropriately for your intended research use. Secrets belong in Community Cloud's Secrets settings, never in the repository. There are no required secrets for the supplied pipeline.
+
+See the official [Community Cloud dependency guidance](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/app-dependencies). The cloud requires runtime packages in repository dependency files and runs on Linux; no Mac-specific paths or external system packages are required here.
+
+### Deploy these changes through GitHub
+
+Review your changes, then run these commands yourself from your existing checkout:
+
+```bash
+git diff --check
+git status --short
+git add .gitignore .env.example app.py README.md requirements.txt requirements-dev.txt src tests docs data/README.md
+git diff --cached --stat
+git commit -m "Add reproducible cloud data and model setup"
+git push
+```
+
+Push to the branch configured for your Streamlit application. Community Cloud should rebuild from that branch; check its build logs and use Manage app → Reboot if needed. After deployment, run **Data & models** setup on the cloud instance. The implementation work does not commit, push, or change your remote automatically.
+
+If a dependency import fails, verify the selected Python version and that the new requirements/source files reached the deployed branch. If data are unavailable, inspect the Data & models diagnostics and retry; there is no synthetic fallback. If training fails, verify date coverage, appearance coverage and cutoff before retrying. Financial outputs remain disabled until a compatible full model bundle has trained successfully.
 
 ## Architecture
 
@@ -33,7 +80,7 @@ For CLI scenarios: `.venv/bin/freeagent evaluate --scenario config/research_scen
 - `valuation`: minutes conservation, financial distributions, similarity, sell-side accounting, binary budget optimisation.
 - `services/analysis_service.py`: training, versioned artifacts, propagation, integrated evaluation.
 - `evaluation`: expanding historical forecasts, proper scores, calibration, transfer-run interface.
-- `app.py`: eight Streamlit screens backed by these services.
+- `app.py`: eight research screens plus Data & models setup and diagnostics.
 - `tests`: labelled synthetic mathematical/integration fixtures plus actual-app checks.
 - `reports/backtest`: real-data forecast records and metrics, when generated.
 
@@ -55,8 +102,8 @@ A successful software run is not evidence of real-world causal or commercial val
 
 ## Verified handoff
 
-The completed local run passed **32 tests** and all real-data software acceptance checks.
-Run `.venv/bin/python scripts/acceptance.py` after ingesting, training, backtesting and evaluating the supplied research scenario. This verifies the saved artifacts and paired EPA agreement; it does not validate causal or commercial claims. Full execution evidence and limitations are in `docs/IMPLEMENTATION_STATUS.md`.
+The updated build passes 49 tests. A clean source-only deployment simulation downloaded the real 380-match season, trained models, calculated backtests and passed all ten software acceptance checks. Details and hosted-deployment limits are recorded in `docs/IMPLEMENTATION_STATUS.md`.
+Run `python scripts/acceptance.py` after ingesting, training, backtesting and evaluating the supplied research scenario. This verifies the saved artifacts and paired EPA agreement; it does not validate causal or commercial claims. Full execution evidence and limitations are in `docs/IMPLEMENTATION_STATUS.md`.
 
-For the exact tested dependency versions, install `requirements.lock` instead of `requirements.txt`.
+`requirements.lock` records the original Mac research environment; Community Cloud uses the portable `requirements.txt`. Use `requirements-dev.txt` for current development and tests.
 Static, standalone interactive evaluation charts are exported to `reports/backtest/calibration.html` and `prediction_vs_outcome.html`.

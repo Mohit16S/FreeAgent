@@ -5,6 +5,7 @@ from pathlib import Path
 import hashlib
 import json
 import platform
+import pickle
 from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
@@ -37,6 +38,9 @@ def train(matches: pd.DataFrame, appearances: pd.DataFrame, cutoff: str,
     m = matches[pd.to_datetime(matches.date)<pd.Timestamp(cutoff)].copy()
     a = appearances[appearances.match_id.isin(m.match_id)].copy()
     require_valid(m,a,cutoff)
+    covered=m[m.match_id.isin(a.match_id)]
+    if len(covered)<20:
+        raise ValueError(f'Player-impact training requires at least 20 pre-cutoff matches with real player appearances; found {len(covered)}. Match results alone cannot produce EPA or a transfer verdict.')
     if bootstrap<2: raise ValueError('At least two bootstrap draws required')
     impact = ImpactModel(alphas=alphas,min_minutes=min_minutes).fit(m,a,cutoff,bootstrap,seed)
     match = DixonColes(decay_days=decay_days).fit(m,cutoff)
@@ -65,8 +69,12 @@ def train(matches: pd.DataFrame, appearances: pd.DataFrame, cutoff: str,
 
 def save(bundle: Bundle, path: Path) -> None:
     path.parent.mkdir(parents=True,exist_ok=True)
-    joblib.dump(bundle,path)
-    path.with_suffix('.json').write_text(json.dumps(bundle.metadata,indent=2))
+    temporary=path.with_suffix('.joblib.tmp')
+    joblib.dump(bundle,temporary)
+    temporary.replace(path)
+    metadata=path.with_suffix('.json.tmp')
+    metadata.write_text(json.dumps(bundle.metadata,indent=2))
+    metadata.replace(path.with_suffix('.json'))
 
 
 def load(path: Path) -> Bundle:
@@ -74,7 +82,13 @@ def load(path: Path) -> Bundle:
     meta = json.loads(path.with_suffix('.json').read_text())
     if meta['version']!=__version__ or meta['sklearn']!=sklearn.__version__:
         raise ValueError('Artifact version mismatch; retrain with current environment')
-    return joblib.load(path)
+    try:
+        bundle=joblib.load(path)
+        if not isinstance(bundle,Bundle) or not bundle.match_draws or not hasattr(bundle.impact,'model'):
+            raise ValueError('Artifact does not contain a trained FreeAgent model bundle; run setup')
+        return bundle
+    except (pickle.UnpicklingError,EOFError,AttributeError,IndexError,KeyError,TypeError) as exc:
+        raise ValueError('Saved model artifact is corrupt or incompatible; run setup to retrain') from exc
 
 
 def evaluate(bundle: Bundle, fixtures: pd.DataFrame, club: str, displacement: Displacement,

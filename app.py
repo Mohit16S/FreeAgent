@@ -1,6 +1,7 @@
 """FreeAgent dashboard. All results come from the saved modelling service."""
 from pathlib import Path
 import json
+import os
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -14,7 +15,12 @@ from freeagent.cli import serializable
 from freeagent.config import load_config
 from freeagent.valuation.alternatives import alternatives
 
-settings=load_config()
+from freeagent.paths import RuntimePaths
+from freeagent.services.setup_service import setup, diagnostics
+
+APP_ROOT=Path(__file__).resolve().parent
+paths=RuntimePaths.discover(APP_ROOT)
+settings=load_config(Path(os.getenv('FREEAGENT_CONFIG',str(APP_ROOT / 'config/default.yaml'))))
 
 st.set_page_config(page_title='FreeAgent | Buying Points, Not Names',page_icon='⚽',layout='wide')
 st.markdown('''<style>
@@ -27,28 +33,64 @@ st.title('Buying Points, Not Names.')
 st.caption('Transfer research • Displacement-aware sporting value • Explicit financial assumptions')
 
 @st.cache_data
-def read_data(stamp):
-    return load_data(Path('data'))
+def read_data(stamp, data_directory):
+    return load_data(Path(data_directory))
 
 @st.cache_resource
-def read_model(stamp):
-    return load(Path('models/artifacts/core.joblib'))
+def read_model(stamp, artifact_path):
+    return load(Path(artifact_path))
 
-page=st.sidebar.radio('Workspace',['Overview','Transfer evaluator','Player impact','Counterfactual analysis','Net Value','Club objectives','Backtesting','Explainability'])
+page=st.sidebar.radio('Workspace',['Overview','Transfer evaluator','Player impact','Counterfactual analysis','Net Value','Club objectives','Backtesting','Explainability','Data & models'])
 st.sidebar.caption('Research prototype · v0.1.0')
 st.sidebar.markdown('[Source: StatsBomb Open Data](https://github.com/statsbomb/open-data)')
 st.sidebar.caption('Historical football data. Fees, wages, point prices and future minutes are user assumptions.')
-match_path=Path('data/processed/matches.csv')
-artifact=Path('models/artifacts/core.joblib')
-if not match_path.exists():
-    st.info('No historical dataset loaded. Run `.venv/bin/freeagent ingest`, then validate and train. No estimates or verdicts are available.')
+match_path=paths.data / 'processed/matches.csv'
+appearance_path=paths.data / 'processed/appearances.csv'
+artifact=paths.artifact
+status=diagnostics(paths)
+
+
+def setup_panel():
+    st.subheader('Data & models')
+    st.write('A fresh cloud instance starts without downloaded data or trained models. Set up the real historical research pipeline here; no terminal or local virtual environment is needed.')
+    cols=st.columns(3)
+    cols[0].metric('Match records',status['match_rows'])
+    cols[1].metric('Player appearances',status['appearance_rows'])
+    cols[2].metric('Models',status['model_status'])
+    st.write('Dataset status:',status['data_status'])
+    st.write('Evaluation status:',status['evaluation_status'])
+    for message in status['errors']: st.error(message)
+    for message in status['warnings']: st.warning(message)
+    if 'quality' in status:
+        with st.expander('Coverage, missing fields and validation report',expanded=True): st.json(status['quality'])
+    if 'last_setup' in status: st.write('Last setup attempt',status['last_setup'])
+    st.markdown('Source: [StatsBomb Open Data](https://github.com/statsbomb/open-data), Premier League 2015/16 (competition 2, season 27). Includes real match results and lineup intervals. Research-use restrictions and attribution requirements apply; review the source licence before public or commercial use.')
+    st.caption('Downloads and trained artifacts are runtime files. They may need rebuilding after a cloud restart. Valid downloaded files are reused on retry. The first download can take several minutes.')
+    evaluate_now=st.checkbox('Also calculate chronological backtest metrics',value=False)
+    if st.button('Download real data and train models',type='primary'):
+        bar=st.progress(0.,text='Starting research pipeline')
+        try:
+            setup(paths,settings,evaluate=evaluate_now,progress=lambda fraction,message:bar.progress(fraction,text=message))
+            read_data.clear(); read_model.clear()
+            st.session_state.pop('result',None); st.session_state.pop('assumptions',None)
+            st.rerun()
+        except (ValueError,OSError,RuntimeError,KeyError,TypeError) as exc:
+            st.error(f'Setup could not finish: {exc}')
+            st.info('Correct the reported issue and retry. No missing statistics are filled with synthetic values.')
+    st.code('python -m freeagent.cli setup --evaluate\npython -m freeagent.cli status',language='bash')
+    st.write('Supported after training: player impact, score probabilities, season simulation, incumbent displacement, EPA and assumption-based Net Value. Not established: causal transfer effects, calibrated financial accuracy, medical injury prediction, or real contract prices.')
+
+
+if page=='Data & models' or status['data_status']!='validated':
+    setup_panel()
     st.stop()
 try:
-    m,a=read_data((match_path.stat().st_mtime_ns,Path('data/processed/appearances.csv').stat().st_mtime_ns))
-    bundle=read_model(artifact.stat().st_mtime_ns) if artifact.exists() else None
+    m,a=read_data((match_path.stat().st_mtime_ns,appearance_path.stat().st_mtime_ns if appearance_path.exists() else None),str(paths.data))
+    bundle=read_model(artifact.stat().st_mtime_ns,str(artifact)) if status['model_status']=='trained' else None
     if bundle: verify_dataset(bundle,m,a)
-except (ValueError,FileNotFoundError,KeyError) as exc:
-    st.error(f'Data or artifact could not be loaded: {exc}'); st.stop()
+except (ValueError,OSError,KeyError,EOFError,ImportError) as exc:
+    st.error(f'Data or model could not be loaded: {exc}')
+    setup_panel(); st.stop()
 team_names={**dict(zip(m.home_id,m.home_name)),**dict(zip(m.away_id,m.away_name))} if 'home_name' in m else {t:t for t in set(m.home_id)|set(m.away_id)}
 
 if page=='Overview':
@@ -58,15 +100,17 @@ if page=='Overview':
     source_label=", ".join(m.source.unique()) if "source" in m else "User CSV; provenance not supplied"
     st.success(f"Historical source: {source_label} · {m.date.min()} to {m.date.max()}")
     st.warning('EPA mapping and financial verdicts are not externally validated. This is a research system, not a causal transfer valuation or investment recommendation.')
+    if a.empty: st.warning('Real player-level appearances are unavailable. Match results alone cannot support player impact, EPA or transfer verdicts.')
+    st.dataframe(pd.DataFrame({'Feature':['Historical match data','Real player appearances','Player impact + score-model ensemble','EPA / Net Value research scenarios','Calculated backtest metrics','Causal / financial validation'], 'Status':['Validated', 'Available' if not a.empty else 'Missing',status['model_status'],'Available with user financial assumptions' if bundle else 'Blocked until models train',status['evaluation_status'],'Not established']}),hide_index=True)
     st.write('Coverage',m.groupby(['competition','season']).size().rename('matches').reset_index())
-    q=Path('data/processed/quality.json')
+    q=paths.data / 'processed/quality.json'
     if q.exists():
         with st.expander('Data quality and provenance'): st.json(json.loads(q.read_text()))
     if bundle:
         with st.expander('Training metadata'): st.json(bundle.metadata)
-    else: st.warning('Models not trained. Run the training command before evaluating transfers.')
-    metrics=Path('reports/backtest/metrics.json')
-    if metrics.exists():
+    else: st.warning('Models are not ready. Open Data & models to download and train; transfer verdicts remain disabled.')
+    metrics=paths.reports / 'metrics.json'
+    if status['evaluation_status']=='calculated':
         st.subheader('Last saved chronological evaluation')
         scores=json.loads(metrics.read_text())
         st.dataframe(pd.DataFrame({k:scores[k] for k in ['dixon_coles','poisson','frequency']}).T,use_container_width=True)
@@ -75,8 +119,8 @@ if page=='Overview':
     st.stop()
 
 if page=='Backtesting':
-    directory=Path('reports/backtest')
-    if not (directory/'metrics.json').exists(): st.info('No saved walk-forward report. Run the backtest CLI command.'); st.stop()
+    directory=paths.reports
+    if status['evaluation_status']!='calculated': st.info('No matching calculated evaluation. Open Data & models, enable the backtest checkbox, and run setup; or use python -m freeagent.cli setup --evaluate.'); st.stop()
     st.subheader('Historical forecasts, evaluated forward in time')
     metrics=json.loads((directory/'metrics.json').read_text())
     st.dataframe(pd.DataFrame({k:metrics[k] for k in ['dixon_coles','poisson','frequency']}).T,use_container_width=True)
@@ -92,7 +136,7 @@ if page=='Backtesting':
     st.download_button('Download predictions',predictions.to_csv(index=False),'predictions.csv')
     st.stop()
 
-if bundle is None: st.warning('Models not trained. No valuation can be produced.'); st.stop()
+if bundle is None: st.warning('Models not trained. Open Data & models to prepare the required real data and models. No valuation can be produced.'); st.stop()
 impact=bundle.impact.report()
 
 if page=='Player impact':

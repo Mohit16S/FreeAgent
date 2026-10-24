@@ -29,3 +29,28 @@ def test_lineup_quarantine_and_null_final_whistle(tmp_path,monkeypatch):
     assert (tmp_path/'processed/quarantined_appearances.csv').exists()
     a=pd.read_csv(tmp_path/'processed/appearances.csv')
     assert (a.minutes==90).all()
+
+
+def test_missing_lineups_retain_real_match_records(tmp_path,monkeypatch):
+    from freeagent.data.ingestion import DataSourceError, load_data
+    raw=[{'match_id':1,'match_date':'2016-01-01','competition':{'competition_name':'TEST'},
+          'season':{'season_name':'2015/2016'},'home_team':{'home_team_id':1,'home_team_name':'A'},
+          'away_team':{'away_team_id':2,'away_team_name':'B'},'home_score':1,'away_score':0}]
+    def fetch(relative,root):
+        if 'matches/' in relative: return raw
+        if 'lineups/' in relative: raise DataSourceError('Lineup unavailable: test')
+        return None
+    monkeypatch.setattr('freeagent.data.ingestion.fetch',fetch)
+    report=ingest_statsbomb(tmp_path)
+    matches,appearances=load_data(tmp_path)
+    assert len(matches)==1 and appearances.empty
+    assert not report['errors'] and report['warnings'] and report['excluded']
+
+
+def test_empty_season_and_bad_schema(tmp_path,monkeypatch):
+    import pytest
+    from freeagent.data.ingestion import DataSourceError
+    monkeypatch.setattr('freeagent.data.ingestion.fetch',lambda *args:[])
+    with pytest.raises(DataSourceError,match='no matches'): ingest_statsbomb(tmp_path)
+    monkeypatch.setattr('freeagent.data.ingestion.fetch',lambda *args:[{'wrong':'schema'}])
+    with pytest.raises(DataSourceError,match='schema'): ingest_statsbomb(tmp_path)

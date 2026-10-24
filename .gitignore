@@ -82,3 +82,6 @@ Thumbs.db
 /mlartifacts/
 /wandb/
 /lightning_logs/
+
+# Runtime setup diagnostics generated on local/cloud instances
+/data/setup-status.json

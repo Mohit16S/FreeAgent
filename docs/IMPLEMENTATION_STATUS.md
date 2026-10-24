@@ -115,3 +115,23 @@ Network/package setup and localhost binding required sandbox approvals. Dependen
 Next highest-priority action: obtain permissioned multi-season appearances/rosters and dated transfer contracts, then validate the impact-to-rate mapping and interval coverage on held-out seasons before interpreting financial verdicts as decision-grade.
 
 Final live-browser verification: restarted dashboard successfully displayed all 380 matches, 549 players, 20 teams, saved cutoff and benchmark table at http://127.0.0.1:8501. Narrow-panel header spacing adjusted after visual inspection.
+
+
+## Community Cloud repair verification — 2026-10-25
+
+The dashboard now supports downloading, validating and training real data through **Data & models → Download real data and train models**. The same workflow is available with `python -m freeagent.cli setup --evaluate`; `python -m freeagent.cli status` reports readiness. Commands require the package installation documented in README, not a local `.venv` path.
+
+Verification used a separate source-only checkout and a fresh Python environment installed from `requirements-dev.txt`. No existing raw/processed datasets, models, reports or virtual environment were copied. A complete fresh download and setup produced:
+
+- 380 real Premier League 2015/16 matches and 10,302 appearances for 549 players.
+- 374 matches with usable appearances; six appearance sets quarantined with reasons while retaining match results.
+- Trained player-impact and score-model ensembles using cutoff 2016-02-01 and the configured seed/20 bootstrap draws.
+- Chronological backtest metrics matching the real-data results above, with no fabricated fallback metrics.
+- Successful hypothetical transfer evaluation and all ten software acceptance checks.
+- A running Streamlit server and browser-rendered dashboard displaying the actual dataset, trained model status and calculated metrics.
+
+The updated suite contains 49 passing tests, including download retries, invalid/missing source files, corrupt caches, missing player appearances, insufficient training data, deterministic training, cold cloud startup, setup-button wiring, corrupt model artifacts and partial evaluation reports. Runtime dependencies are explicit in requirements.txt; pytest is a separate development dependency.
+
+This verifies a clean local deployment simulation, not the user's hosted Community Cloud instance. No commit, push or remote deployment was performed. Push the reviewed source changes to the configured GitHub branch, then run setup within the cloud app; ignored runtime files are regenerated there. Runtime storage is ephemeral and setup may need to be repeated after a restart.
+
+The default source supplies real player involvement for this historical season. Other datasets need compatible real player appearances before player-impact/EPA/financial workflows can train. Dated contracts, reliable fees/wages, injury records, causal transfer labels, multi-season generalisation and calibrated counterfactual intervals remain unavailable or unvalidated as described above.
