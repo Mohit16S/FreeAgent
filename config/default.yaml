@@ -1,0 +1,10 @@
+seed: 42
+bootstrap_draws: 20
+simulations: 1000
+min_player_minutes: 270
+ridge_alphas: [1, 10, 100]
+match_decay_days: 365
+qualification_places: 4
+relegation_places: 3
+financial_tolerance: 1000000
+verdict_probability: 0.75

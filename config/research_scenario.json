@@ -1,0 +1,19 @@
+{
+  "label": "Hypothetical signing scenario on real historical football data; not an actual transaction or market appraisal",
+  "season": "2015/2016",
+  "club": "24",
+  "incoming": "10955",
+  "incumbent": "3535",
+  "minutes": 900,
+  "incumbent_minutes": 1350,
+  "price_per_point": 2000000,
+  "price_per_point_basis": "Arbitrary editable research sensitivity assumption, not an estimated universal point price",
+  "costs": {
+    "fee": 20000000,
+    "annual_wage": 2000000,
+    "contract_years": 4,
+    "horizon_years": 0.39473684210526316
+  },
+  "availability": [0.8, 1.0],
+  "simulations": 1000
+}

@@ -1,0 +1,84 @@
+# Python bytecode and package/build outputs
+__pycache__/
+*.py[cod]
+*.egg-info/
+/build/
+/dist/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables and local secrets (keep the example template)
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+.streamlit/secrets.*.toml
+!.streamlit/secrets.example.toml
+
+# Notebook, testing, linting and type-checking caches
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Local IDE settings; allow useful shared VS Code configuration
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# Logs, temporary files and local caches
+*.log
+*.tmp
+*.swp
+*.swo
+*~
+/cache/
+/.cache/
+/tmp/
+/temp/
+
+# Local source datasets and derived data; keep data/README.md and samples
+/data/raw/
+/data/interim/
+/data/processed/
+
+# Generated model artifacts and large checkpoints
+/models/artifacts/
+/checkpoints/
+*.joblib
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.hdf5
+*.keras
+*.onnx
+*.safetensors
+
+# Generated reports, exports and experiment outputs
+/reports/
+/output/
+/outputs/
+/runs/
+/mlruns/
+/mlartifacts/
+/wandb/
+/lightning_logs/
